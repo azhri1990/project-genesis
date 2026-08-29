@@ -1,0 +1,6 @@
+fastapi>=0.115,<1
+# Keep the runtime server pure-Python so the same dependency set works on
+# Termux/Android without compiling C/C++ packages such as numpy or cmake.
+uvicorn>=0.30,<1
+flask>=3.0,<4
+requests>=2.31,<3

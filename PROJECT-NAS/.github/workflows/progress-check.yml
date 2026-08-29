@@ -1,0 +1,60 @@
+name: PROJECT-NAS Progress Check
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: ${{ github.workspace }}
+  PYTHONDONTWRITEBYTECODE: "1"
+  PROJECT_NAS_DOCTOR_OFFLINE: "1"
+
+jobs:
+  progress-check:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Create isolated Python environment
+        run: |
+          python3 --version
+          python3 -m venv .ci-venv
+          .ci-venv/bin/python -m pip install --upgrade pip
+          .ci-venv/bin/python -m pip install -r requirements-test.txt
+          .ci-venv/bin/python -m pip install -r requirements-runtime.txt
+
+      - name: Check shell syntax
+        run: bash -n runtime/project-nas.sh
+
+      - name: Compile Python sources
+        run: .ci-venv/bin/python -m compileall -q runtime tests
+
+      - name: Check repository whitespace
+        run: git diff --check
+
+      - name: Run full test suite
+        run: .ci-venv/bin/python -m pytest -q tests
+
+      - name: Run PROJECT-NAS doctor diagnostics
+        run: .ci-venv/bin/python runtime/doctor.py
+
+      - name: Run progress reporter
+        run: |
+          .ci-venv/bin/python runtime/progress.py --commits 5 > progress.json
+          .ci-venv/bin/python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path("progress.json").read_text(encoding="utf-8"))
+          repo = payload["repo"]
+          event = os.environ.get("GITHUB_EVENT_NAME")
+          if event == "pull_request":
+              assert repo["branch"] == "HEAD"
+          else:
+              assert repo["branch"] == os.environ["GITHUB_REF_NAME"]
+          assert repo["recent_commits"]
+          print(f"CI progress check OK: event={event}, branch={repo['branch']}, commits={len(repo['recent_commits'])}")
+          PY
